@@ -1,11 +1,13 @@
 use bevy::{input::system::exit_on_esc_system, prelude::*};
 
-const BLOCK_SIZE: f32 = 40.0;
-const ROWS_COUNT: u8 = 4;
-const COLS_COUNT: u8 = 4;
-const GAP: f32 = 200.0;
-const WINDOW_HEIGHT: f32 = BLOCK_SIZE * ROWS_COUNT as f32 + GAP * 2.0;
-const WINDOW_WIDTH: f32 = BLOCK_SIZE * COLS_COUNT as f32 + GAP * 2.0;
+mod constants;
+use constants::*;
+
+mod game_board;
+use game_board::*;
+
+mod block;
+use block::*;
 
 #[derive(Clone)]
 struct Materials {
@@ -44,14 +46,6 @@ impl Materials {
 }
 
 #[derive(Clone, Copy)]
-enum GameMovementDirection {
-    Up,
-    Right,
-    Down,
-    Left,
-}
-
-#[derive(Clone, Copy)]
 struct GameMovement {
     direction: Option<GameMovementDirection>,
 }
@@ -63,42 +57,6 @@ impl Default for GameMovement {
         }
     }
 }
-
-#[derive(Clone)]
-enum BlockSize {
-    _2,
-    _4,
-    _8,
-    _16,
-    _32,
-    _64,
-    _128,
-    _256,
-    _512,
-    _1024,
-    _2048,
-}
-
-impl BlockSize {
-    fn to_string(&self) -> String {
-        match self {
-            BlockSize::_2 => String::from("2"),
-            BlockSize::_4 => String::from("4"),
-            BlockSize::_8 => String::from("8"),
-            BlockSize::_16 => String::from("16"),
-            BlockSize::_32 => String::from("32"),
-            BlockSize::_64 => String::from("64"),
-            BlockSize::_128 => String::from("128"),
-            BlockSize::_256 => String::from("256"),
-            BlockSize::_512 => String::from("512"),
-            BlockSize::_1024 => String::from("1024"),
-            BlockSize::_2048 => String::from("2048"),
-        }
-    }
-}
-
-struct Block;
-struct BlockText;
 
 #[derive(Clone, PartialEq)]
 struct Position {
@@ -151,98 +109,111 @@ fn setup(
             debug_color: materials.add(Color::rgb_u8(220, 20, 60).into()),
             transparent_color: materials.add(Color::rgba_u8(0, 0, 0, 0).into()),
         });
+
+    let game_board = GameBoard::new([[None; COLS_COUNT as usize]; ROWS_COUNT as usize]);
+
+    commands
+        .insert_resource(game_board);
 }
 
 fn block_spawner(
     commands: &mut Commands,
     asset_server: Res<AssetServer>,
     materials: Res<Materials>,
+    game_board: ResMut<GameBoard>,
 ) {
-    spawn_block(
+    blocks_spawner(
         commands,
         &asset_server,
         &materials,
-        BlockSize::_2,
-        Position {
-            x: 0,
-            y: 0,
-        },
+        game_board,
+        vec![
+            (
+                BlockSize::_2,
+                Position {
+                    x: 0,
+                    y: 0,
+                },
+            ),
+            (
+                BlockSize::_4,
+                Position {
+                    x: 2,
+                    y: 3,
+                },
+            ),
+            (
+                BlockSize::_2,
+                Position {
+                    x: 1,
+                    y: 3,
+                },
+            ),
+        ]
     );
 }
 
-fn spawn_block(
+fn blocks_spawner(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     materials: &Res<Materials>,
-    block_size: BlockSize,
-    block_position: Position,
+    mut game_board: ResMut<GameBoard>,
+    blocks: Vec<(BlockSize, Position)>,
 ) {
     let font = asset_server.load("OpenSans-Regular.ttf");
 
-    commands
-        .spawn(SpriteBundle {
-            sprite: Sprite::new(Vec2::new(BLOCK_SIZE, BLOCK_SIZE)),
+    for (block_size, block_position) in blocks.iter() {
+        commands.spawn(NodeBundle {
+            style: Style {
+                size: Size {
+                    height: Val::Px(BLOCK_SIZE),
+                    width: Val::Px(BLOCK_SIZE),
+                },
+                align_content: AlignContent::Center,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                position_type: PositionType::Absolute,
+                ..Default::default()
+            },
             material: Materials::from_block_size(&materials, block_size.clone()).clone(),
             ..Default::default()
         })
-        .with(Block)
-        .with(block_position.clone());
-
-    commands.spawn(NodeBundle {
-        style: Style {
-            size: Size {
-                height: Val::Px(BLOCK_SIZE),
-                width: Val::Px(BLOCK_SIZE),
-            },
-            align_content: AlignContent::Center,
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            position_type: PositionType::Absolute,
-            ..Default::default()
-        },
-        material: materials.transparent_color.clone(),
-        ..Default::default()
-    })
-    .with_children(|parent| {
-        parent.spawn( TextBundle {
-            text: Text {
-                value: block_size.to_string(),
-                font: font.clone(),
-                style: TextStyle {
-                    font_size: 20.0,
-                    color: Color::WHITE,
-                    alignment: TextAlignment {
-                        horizontal: HorizontalAlign::Center,
-                        vertical: VerticalAlign::Center,
-                    },
-                }
-            },
-            style: Style {
-                align_self: AlignSelf::Center,
+        .with_children(|parent| {
+            parent.spawn( TextBundle {
+                text: Text {
+                    value: block_size.to_string(),
+                    font: font.clone(),
+                    style: TextStyle {
+                        font_size: 20.0,
+                        color: Color::WHITE,
+                        alignment: TextAlignment {
+                            horizontal: HorizontalAlign::Center,
+                            vertical: VerticalAlign::Center,
+                        },
+                    }
+                },
+                style: Style {
+                    align_self: AlignSelf::Center,
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            ..Default::default()
-        });
-    })
-    .with(block_position.clone())
-    .with(BlockText);
+            });
+        })
+        .with(block_position.clone())
+        .with(BlockText);
+    
+        game_board.set_cell(block_position.x, block_position.y, Some(block_size.clone()));
+    }
+
+    println!("initial game board: {}", game_board.pretty_string());
 }
 
 fn position_translation(
-    mut q: Query<(&Position, &mut Transform), With<Block>>,
-    mut sq: Query<(&Position, &mut Style), With<BlockText>>,
+    mut q: Query<(&Position, &mut Style), With<BlockText>>,
 ) {
-    for (pos, mut transform) in q.iter_mut() {
-        transform.translation = Vec3::new(
-            pos.x as f32 * BLOCK_SIZE - (COLS_COUNT / 2) as f32 * BLOCK_SIZE + BLOCK_SIZE as f32 / 2.0,
-            pos.y as f32 * BLOCK_SIZE - (ROWS_COUNT / 2) as f32 * BLOCK_SIZE + BLOCK_SIZE as f32 / 2.0,
-            0.0,
-        );
-    }
-
-    for (pos, mut style) in sq.iter_mut() {
+    for (pos, mut style) in q.iter_mut() {
         style.position.left = Val::Px(GAP + (pos.x as f32 * BLOCK_SIZE));
-        style.position.bottom = Val::Px(GAP + (pos.y as f32 * BLOCK_SIZE));
+        style.position.top = Val::Px(GAP + (pos.y as f32 * BLOCK_SIZE));
     }
 }
 
@@ -250,6 +221,10 @@ fn input_movement(
     keyboard_input: Res<Input<KeyCode>>,
     mut game_movement: ResMut<GameMovement>
 ) {
+    if game_movement.direction.is_some() {
+        return;
+    }
+
     if keyboard_input.pressed(KeyCode::Up) {
         game_movement.direction = Some(GameMovementDirection::Up);
     } else if keyboard_input.pressed(KeyCode::Right) {
@@ -263,26 +238,37 @@ fn input_movement(
 
 fn movement(
     mut game_movement: ResMut<GameMovement>,
-    mut positions: Query<&mut Position>
+    mut positions: Query<&mut Position, With<BlockText>>,
+    mut game_board: ResMut<GameBoard>,
 ) {
     if let Some(direction) = game_movement.direction {
-        for (mut pos) in positions.iter_mut() {
+        for mut pos in positions.iter_mut() {
             match direction {
                 GameMovementDirection::Up => {
-                    pos.y = ROWS_COUNT - 1;
+                    let available_steps = game_board.steps(pos.x, pos.y, GameMovementDirection::Up);
+
+                    pos.y -= available_steps;
                 },
                 GameMovementDirection::Right => {
-                    pos.x = COLS_COUNT - 1;
+                    let available_steps = game_board.steps(pos.x, pos.y, GameMovementDirection::Right);
+
+                    pos.x += available_steps;
                 },
                 GameMovementDirection::Down => {
-                    pos.y = 0;
+                    let available_steps = game_board.steps(pos.x, pos.y, GameMovementDirection::Down);
+                    
+                    pos.y += available_steps;
                 },
                 GameMovementDirection::Left => {
-                    pos.x = 0;
+                    let available_steps = game_board.steps(pos.x, pos.y, GameMovementDirection::Left);
+                    
+                    pos.x -= available_steps;
                 },
             }
         }
 
         game_movement.direction = None;
+        game_board.move_board(direction);
+        println!("game board moved: \n{}", game_board.pretty_string());
     }
 }
