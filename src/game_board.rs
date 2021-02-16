@@ -3,6 +3,8 @@ use crate::block::{BlockSize};
 
 pub type GameBoardArray = [[Option<BlockSize>; COLS_COUNT as usize]; ROWS_COUNT as usize];
 
+type Patchset = Vec<((u8, u8), (u8, u8))>;
+
 pub struct GameBoard {
     game_board_array: GameBoardArray,
 }
@@ -47,12 +49,21 @@ impl GameBoard {
     pub fn steps(&self, x: u8, y: u8, direction: GameMovementDirection) -> u8 {
         let mut result = 0;
 
-        let range = match direction {
-            GameMovementDirection::Up => 0..y,
-            GameMovementDirection::Down => y..ROWS_COUNT,
-            GameMovementDirection::Right => x..COLS_COUNT,
-            GameMovementDirection::Left => 0..x,
+        let range_start = match direction {
+            GameMovementDirection::Up => 0,
+            GameMovementDirection::Down => y,
+            GameMovementDirection::Right => x,
+            GameMovementDirection::Left => 0,
         };
+
+        let range_end = match direction {
+            GameMovementDirection::Up => y,
+            GameMovementDirection::Down => ROWS_COUNT - 1,
+            GameMovementDirection::Right => COLS_COUNT - 1,
+            GameMovementDirection::Left => x,
+        };
+
+        let range = range_start..(range_end + 1);
 
         for cell_index in range {
             let cell = match direction {
@@ -67,12 +78,62 @@ impl GameBoard {
             }
         }
 
-        println!("print result: {:?} for direction: {:?}", result, direction);
+        let mut merge_iterator_start = range_end.clone() as i8;
+
+        while merge_iterator_start >= range_start as i8 {
+            if merge_iterator_start == range_end as i8 {
+                merge_iterator_start -= 1;
+
+                continue;
+            }
+
+            let curr_cell = match direction {
+                GameMovementDirection::Up => self.get_cell(x, merge_iterator_start as u8),
+                GameMovementDirection::Right => self.get_cell(merge_iterator_start as u8, y),
+                GameMovementDirection::Down => self.get_cell(x, merge_iterator_start as u8),
+                GameMovementDirection::Left => self.get_cell(merge_iterator_start as u8, y),
+            };
+
+            let mut prev_cell: Option<BlockSize> = None;
+            let mut prev_cell_iterator = merge_iterator_start + 1;
+
+            while prev_cell_iterator <= range_end as i8 {
+                prev_cell = match direction {
+                    GameMovementDirection::Up => self.get_cell(x, prev_cell_iterator as u8),
+                    GameMovementDirection::Right => self.get_cell(prev_cell_iterator as u8, y),
+                    GameMovementDirection::Down => self.get_cell(x, prev_cell_iterator as u8),
+                    GameMovementDirection::Left => self.get_cell(prev_cell_iterator as u8, y),
+                };
+
+                if prev_cell.is_some() {
+                    break;
+                }
+
+                prev_cell_iterator += 1;
+            }
+
+            if 
+                curr_cell.is_some() &&
+                prev_cell.is_some() &&
+                curr_cell.unwrap() == prev_cell.unwrap()
+            {
+                result += 1;
+                merge_iterator_start -= 1;
+            }
+
+            merge_iterator_start -= 1;
+        }
 
         result
     }
 
     pub fn move_board(&mut self, direction: GameMovementDirection) {
+        let patchset = self.gen_patchset(direction);
+
+        self.apply_patchset(patchset);
+    }
+
+    fn gen_patchset(&self, direction: GameMovementDirection) -> Patchset {
         let iter_range = match direction {
             GameMovementDirection::Up => (0..ROWS_COUNT).collect::<Vec<u8>>(),
             GameMovementDirection::Down => (0..ROWS_COUNT).rev().collect::<Vec<u8>>(),
@@ -80,13 +141,11 @@ impl GameBoard {
             GameMovementDirection::Left => (0..COLS_COUNT).collect::<Vec<u8>>(),
         };
 
+        let mut patchset: Patchset = Vec::new();
+
         for y in iter_range.clone() {
             for x in iter_range.clone() {
-                println!("iterating ({}, {})", x, y);
-
-                if let Some(block) = self.get_cell(x, y) {
-                    println!("got block at: ({}, {})", x, y);
-
+                if self.get_cell(x, y).is_some() {
                     let diff_x = match direction {
                         GameMovementDirection::Right => self.steps(x, y, direction) as i8,
                         GameMovementDirection::Left => -(self.steps(x, y, direction) as i8),
@@ -99,14 +158,137 @@ impl GameBoard {
                         _ => 0,
                     };
 
-                    println!("block diff: ({}, {})", diff_x, diff_y);
-
                     if diff_x != 0 || diff_y != 0 {
-                        self.set_cell((x as i8 + diff_x) as u8, (y as i8 + diff_y) as u8, Some(block));
-                        self.set_cell(x, y, None);
+                        let new_x = (x as i8 + diff_x) as u8;
+                        let new_y = (y as i8 + diff_y) as u8;
+
+                        patchset.push(((x, y), (new_x, new_y)));
                     }
                 }
             }
         }
+
+        patchset
+    }
+
+    fn apply_patchset(&mut self, patchset: Patchset) {
+        for patch in patchset.into_iter() {
+            let ((x, y), (new_x, new_y)) = patch;
+
+            if let Some(block) = self.get_cell(x, y) {
+                if let Some(block_to_merge) = self.get_cell(new_x, new_y) {
+                    self.set_cell(new_x, new_y, Some(block_to_merge.next()));
+                } else {
+                    self.set_cell(new_x, new_y, Some(block));
+                }
+
+                self.set_cell(x, y, None);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod game_board_tests {
+    use super::*;
+    use crate::block::*;
+    use crate::constants::*;
+
+    #[test]
+    fn steps_plain() {
+        let mut game_board = GameBoard::new([[None; COLS_COUNT as usize]; ROWS_COUNT as usize]);
+
+        game_board.set_cell(0, 0, Some(BlockSize::_2));
+
+        println!("{}", game_board.pretty_string());
+
+        assert!(game_board.get_cell(0, 0).is_some());
+        assert!(game_board.get_cell(0, 3).is_none());
+
+        game_board.move_board(GameMovementDirection::Down);
+
+        println!("{}", game_board.pretty_string());
+
+        assert!(game_board.get_cell(0, 0).is_none());
+        assert!(game_board.get_cell(0, 3).is_some());
+    }
+
+    #[test]
+    fn steps_multi_blocks() {
+        let mut game_board = GameBoard::new([[None; COLS_COUNT as usize]; ROWS_COUNT as usize]);
+
+        game_board.set_cell(0, 0, Some(BlockSize::_2));
+        game_board.set_cell(0, 1, Some(BlockSize::_4));
+
+        println!("{}", game_board.pretty_string());
+
+        assert!(game_board.get_cell(0, 0).is_some());
+        assert!(game_board.get_cell(0, 1).is_some());
+        assert!(game_board.get_cell(0, 3).is_none());
+        assert!(game_board.get_cell(0, 2).is_none());
+
+        game_board.move_board(GameMovementDirection::Down);
+
+        println!("{}", game_board.pretty_string());
+
+        assert!(game_board.get_cell(0, 0).is_none());
+        assert!(game_board.get_cell(0, 1).is_none());
+        assert!(game_board.get_cell(0, 3).is_some());
+        assert!(game_board.get_cell(0, 2).is_some());
+
+        assert_eq!(game_board.get_cell(0, 3).unwrap(), BlockSize::_4);
+        assert_eq!(game_board.get_cell(0, 2).unwrap(), BlockSize::_2);
+    }
+
+    #[test]
+    fn blocks_merging() {
+        let mut game_board = GameBoard::new([[None; COLS_COUNT as usize]; ROWS_COUNT as usize]);
+
+        game_board.set_cell(0, 0, Some(BlockSize::_2));
+        game_board.set_cell(0, 1, Some(BlockSize::_2));
+
+        println!("{}", game_board.pretty_string());
+
+        assert!(game_board.get_cell(0, 0).is_some());
+        assert!(game_board.get_cell(0, 1).is_some());
+        assert!(game_board.get_cell(0, 3).is_none());
+        assert!(game_board.get_cell(0, 2).is_none());
+
+        game_board.move_board(GameMovementDirection::Down);
+
+        println!("{}", game_board.pretty_string());
+
+        assert!(game_board.get_cell(0, 0).is_none());
+        assert!(game_board.get_cell(0, 1).is_none());
+        assert!(game_board.get_cell(0, 2).is_none());
+        assert!(game_board.get_cell(0, 3).is_some());
+
+        assert_eq!(game_board.get_cell(0, 3).unwrap(), BlockSize::_4);
+    }
+
+    #[test]
+    fn complex_blocks_merging() {
+        let mut game_board = GameBoard::new([[None; COLS_COUNT as usize]; ROWS_COUNT as usize]);
+
+        game_board.set_cell(0, 3, Some(BlockSize::_2));
+        game_board.set_cell(1, 3, Some(BlockSize::_2));
+        game_board.set_cell(2, 3, Some(BlockSize::_4));
+
+        println!("{}", game_board.pretty_string());
+
+        assert!(game_board.get_cell(0, 3).is_some());
+        assert!(game_board.get_cell(1, 3).is_some());
+        assert!(game_board.get_cell(2, 3).is_some());
+
+        game_board.move_board(GameMovementDirection::Left);
+
+        println!("{}", game_board.pretty_string());
+
+        assert!(game_board.get_cell(0, 3).is_some());
+        assert!(game_board.get_cell(1, 3).is_some());
+        assert!(game_board.get_cell(2, 3).is_none());
+
+        assert_eq!(game_board.get_cell(0, 3).unwrap(), BlockSize::_4);
+        assert_eq!(game_board.get_cell(1, 3).unwrap(), BlockSize::_4);
     }
 }

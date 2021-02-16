@@ -1,4 +1,5 @@
 use bevy::{input::system::exit_on_esc_system, prelude::*};
+use std::{collections::HashSet, hash::Hash, time::Duration};
 
 mod constants;
 use constants::*;
@@ -8,6 +9,8 @@ use game_board::*;
 
 mod block;
 use block::*;
+
+struct MoveTimer(Timer);
 
 #[derive(Clone)]
 struct Materials {
@@ -58,7 +61,7 @@ impl Default for GameMovement {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct Position {
     x: u8,
     y: u8,
@@ -73,6 +76,10 @@ fn main() {
             ..Default::default()
         })
         .add_resource(GameMovement::default())
+        .add_resource(MoveTimer(Timer::new(
+            Duration::from_millis(200. as u64),
+            true,
+        )))
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup.system())
         .add_startup_stage("spawn_initial_blocks", SystemStage::single(block_spawner.system()))
@@ -135,13 +142,13 @@ fn block_spawner(
                     y: 0,
                 },
             ),
-            (
-                BlockSize::_4,
-                Position {
-                    x: 2,
-                    y: 3,
-                },
-            ),
+            // (
+            //     BlockSize::_4,
+            //     Position {
+            //         x: 2,
+            //         y: 3,
+            //     },
+            // ),
             (
                 BlockSize::_2,
                 Position {
@@ -200,6 +207,7 @@ fn blocks_spawner(
             });
         })
         .with(block_position.clone())
+        .with(block_size.clone())
         .with(BlockText);
     
         game_board.set_cell(block_position.x, block_position.y, Some(block_size.clone()));
@@ -237,12 +245,16 @@ fn input_movement(
 }
 
 fn movement(
+    commands: &mut Commands,
+    asset_server: Res<AssetServer>,
+    materials: Res<Materials>,
+    block_sizes: Query<&BlockSize, With<BlockText>>,
+    mut positions: Query<(Entity, &mut Position), With<BlockText>>,
     mut game_movement: ResMut<GameMovement>,
-    mut positions: Query<&mut Position, With<BlockText>>,
     mut game_board: ResMut<GameBoard>,
 ) {
     if let Some(direction) = game_movement.direction {
-        for mut pos in positions.iter_mut() {
+        for (_, mut pos) in positions.iter_mut() {
             match direction {
                 GameMovementDirection::Up => {
                     let available_steps = game_board.steps(pos.x, pos.y, GameMovementDirection::Up);
@@ -270,5 +282,31 @@ fn movement(
         game_movement.direction = None;
         game_board.move_board(direction);
         println!("game board moved: \n{}", game_board.pretty_string());
+
+        let mut despawned_positions: HashSet<Position> = HashSet::new();
+        let mut blocks_to_spawn: Vec<(BlockSize, Position)> = Vec::new();
+
+        for (entity, pos) in positions.iter_mut() {
+            let block_size = block_sizes.get(entity).unwrap();
+            let game_board_block_size = game_board.get_cell(pos.x, pos.y).unwrap();
+
+            // blocks merged and now have new size
+            if block_size.ne(&game_board_block_size) {
+                commands.despawn_recursive(entity);
+
+                if despawned_positions.contains(&Position { x: pos.x, y: pos.y }) {
+                    blocks_to_spawn.push((
+                        game_board_block_size.clone(),
+                        pos.clone(),
+                    ));
+                } else {
+                    despawned_positions.insert(Position { x: pos.x, y: pos.y });
+                }
+            }
+        }
+
+        if blocks_to_spawn.len() > 0 {
+            blocks_spawner(commands, &asset_server, &materials, game_board, blocks_to_spawn);
+        }
     }
 }

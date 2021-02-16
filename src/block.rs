@@ -32,4 +32,22 @@ impl BlockSize {
             BlockSize::_2048 => String::from("2048"),
         }
     }
+
+    pub fn next(&self) -> Self {
+        match self {
+            BlockSize::_2 => BlockSize::_4,
+            BlockSize::_4 => BlockSize::_8,
+            BlockSize::_8 => BlockSize::_16,
+            BlockSize::_16 => BlockSize::_32,
+            BlockSize::_32 => BlockSize::_64,
+            BlockSize::_64 => BlockSize::_128,
+            BlockSize::_128 => BlockSize::_256,
+            BlockSize::_256 => BlockSize::_512,
+            BlockSize::_512 => BlockSize::_1024,
+            BlockSize::_1024 => BlockSize::_2048,
+            BlockSize::_2048 => {
+                panic!("no more blocks!");
+            },
+        }
+    }
 }
