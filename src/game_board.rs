@@ -1,3 +1,5 @@
+use rand::Rng;
+
 use crate::constants::{COLS_COUNT, ROWS_COUNT, GameMovementDirection};
 use crate::block::{BlockSize};
 
@@ -125,6 +127,51 @@ impl GameBoard {
         }
 
         result
+    }
+
+    pub fn rand_available_cell(&self) -> (u8, u8) {
+        let mut rng = rand::thread_rng();
+
+        let iterate_y: bool = rng.gen();
+        let iterate_forward: bool = rng.gen();
+        let first_index = rng.gen_range(0..COLS_COUNT);
+        let second_index = rng.gen_range(0..ROWS_COUNT);
+
+        let (first_start, second_start) = if iterate_forward {
+            (first_index, second_index)
+        } else {
+            (0, 0)
+        };
+
+        let (first_end, second_end) = if iterate_forward {
+            (ROWS_COUNT, COLS_COUNT)
+        } else {
+            (first_index, second_index)
+        };
+
+        let first_range = first_start..first_end;
+        let second_range = second_start..second_end;
+
+        for first_index in first_range.clone() {
+            for second_index in second_range.clone() {
+                let x = if iterate_y { first_index } else { second_index };
+                let y = if iterate_y { second_index } else { first_index };
+
+                if self.get_cell(x, y).is_none() {
+                    return (x, y)
+                }
+            }
+        }
+
+        for y in 0..ROWS_COUNT {
+            for x in 0..COLS_COUNT {
+                if self.get_cell(x, y).is_none() {
+                    return (x, y)
+                }
+            }
+        }
+
+        (first_index, second_index)
     }
 
     pub fn move_board(&mut self, direction: GameMovementDirection) {
@@ -290,5 +337,21 @@ mod game_board_tests {
 
         assert_eq!(game_board.get_cell(0, 3).unwrap(), BlockSize::_4);
         assert_eq!(game_board.get_cell(1, 3).unwrap(), BlockSize::_4);
+    }
+
+    #[test]
+    fn rand_cells() {
+        let mut game_board = GameBoard::new([[None; COLS_COUNT as usize]; ROWS_COUNT as usize]);
+
+        for _x in 0..ROWS_COUNT {
+            for _y in 0..COLS_COUNT {
+                println!("testing: ({}, {})", _x, _y);
+
+                let (x, y) = game_board.rand_available_cell();
+                assert!(game_board.get_cell(x, y).is_none());
+
+                game_board.set_cell(x, y, Some(BlockSize::_2));
+            }
+        }
     }
 }
