@@ -52,7 +52,8 @@ impl Position {
 
 fn main() {
     App::build()
-        .add_event::<BoardMovedEvent>()
+        .add_event::<BoardMoveStart>()
+        .add_event::<BoardMoveEnd>()
         .add_resource(ClearColor(Color::rgb_u8(187, 173, 160)))
         .add_resource(WindowDescriptor {
             title: "2048".to_string(),
@@ -72,8 +73,8 @@ fn main() {
         .add_system(exit_on_esc_system.system())
         .add_system(input_movement.system())
         .add_system(movement.system())
-        .add_system(game_movement_ticker.system())
         .add_system(game_board_watcher.system())
+        .add_system(game_movement_timer_ticker.system())
         .run();
 }
 
@@ -98,7 +99,7 @@ fn block_spawner(
     commands: &mut Commands,
     asset_server: Res<AssetServer>,
     materials: Res<Materials>,
-    game_board: ResMut<GameBoard>,
+    mut game_board: ResMut<GameBoard>,
 ) {
     for y in 0..ROWS_COUNT {
         for x in 0..COLS_COUNT {
@@ -125,7 +126,7 @@ fn block_spawner(
         commands,
         &asset_server,
         &materials,
-        game_board,
+        &mut game_board,
         vec![
             (
                 BlockSize::_2,
@@ -149,7 +150,7 @@ fn blocks_spawner(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     materials: &Res<Materials>,
-    mut game_board: ResMut<GameBoard>,
+    game_board: &mut ResMut<GameBoard>,
     blocks: Vec<(BlockSize, Position)>,
 ) {
     let font = asset_server.load("OpenSans-Regular.ttf");
@@ -256,22 +257,28 @@ fn transform_to_position(
 }
 
 fn position_translation(
-    game_movement: Res<GameMovement>,
+    mut game_movement: ResMut<GameMovement>,
     mut q: Query<(&Position, &mut Style)>,
+    mut board_moved_event: ResMut<Events<BoardMoveEnd>>,
 ) {
     if let Some(game_movement_timer) = game_movement.move_timer.to_owned() {
-        for (pos, mut style) in q.iter_mut() {
-            move_style_to(pos, &mut style, game_movement_timer.percent());
+        if !game_movement_timer.finished() {
+            for (pos, mut style) in q.iter_mut() {
+                move_style_to(pos, &mut style, game_movement_timer.percent());
+            }
+        } else {
+            board_moved_event.send(BoardMoveEnd);
+            game_movement.move_timer = None;
         }
     }
 }
 
-fn game_movement_ticker(
+fn game_movement_timer_ticker(
     time: Res<Time>,
     mut game_movement: ResMut<GameMovement>,
 ) {
-    if let Some(timer) = game_movement.move_timer.borrow_mut() {
-        timer.tick(time.delta_seconds());
+    if let Some(game_movement_timer) = game_movement.move_timer.borrow_mut() {
+        game_movement_timer.tick(time.delta_seconds());
     }
 }
 
@@ -309,19 +316,15 @@ fn input_movement(
     game_movement.direction = direction;
 
     if pressed_key.is_some() {
-        game_movement.move_timer = Some(Timer::new(Duration::from_millis(400. as u64), false));
+        game_movement.move_timer = Some(Timer::new(Duration::from_millis(200. as u64), false));
     }
 }
 
 fn movement(
-    commands: &mut Commands,
-    asset_server: Res<AssetServer>,
-    materials: Res<Materials>,
-    block_sizes: Query<&BlockSize, With<Block>>,
     mut positions: Query<(Entity, &mut Position), With<Block>>,
     mut game_movement: ResMut<GameMovement>,
     mut game_board: ResMut<GameBoard>,
-    mut board_moved_event: ResMut<Events<BoardMovedEvent>>,
+    mut board_moved_event: ResMut<Events<BoardMoveStart>>,
 ) {
     if let Some(direction) = game_movement.direction {
         let mut any_block_moved = false;
@@ -355,53 +358,55 @@ fn movement(
             return;
         }
 
-        board_moved_event.send(BoardMovedEvent);
+        board_moved_event.send(BoardMoveStart);
 
         game_board.move_board(direction);
-
-        let mut despawned_positions: HashSet<Position> = HashSet::new();
-        let mut blocks_to_spawn: Vec<(BlockSize, Position)> = Vec::new();
-
-        for (entity, pos) in positions.iter_mut() {
-            let block_size = block_sizes.get(entity).unwrap();
-            let game_board_block_size = game_board.get_cell(pos.x, pos.y).unwrap();
-
-            // blocks merged and now have new size
-            if block_size.ne(&game_board_block_size) {
-                commands.despawn_recursive(entity);
-
-                if despawned_positions.contains(&Position { x: pos.x, y: pos.y }) {
-                    blocks_to_spawn.push((
-                        game_board_block_size.clone(),
-                        pos.clone(),
-                    ));
-                } else {
-                    despawned_positions.insert(Position { x: pos.x, y: pos.y });
-                }
-            }
-        }
-
-        if blocks_to_spawn.len() > 0 {
-            blocks_spawner(commands, &asset_server, &materials, game_board, blocks_to_spawn);
-        }
     }
 }
 
 fn game_board_watcher(
     commands: &mut Commands,
-    board_moved_evemts: Res<Events<BoardMovedEvent>>,
+    board_moved_evemts: Res<Events<BoardMoveEnd>>,
     asset_server: Res<AssetServer>,
     materials: Res<Materials>,
-    game_board: ResMut<GameBoard>,
-    mut move_reader: Local<EventReader<BoardMovedEvent>>,
+    block_sizes: Query<&BlockSize, With<Block>>,
+    mut game_board: ResMut<GameBoard>,
+    mut positions: Query<(Entity, &mut Position), With<Block>>,
+    mut move_reader: Local<EventReader<BoardMoveEnd>>,
 ) {
     if move_reader.iter(&board_moved_evemts).next().is_none() {
         return;
     }
 
+    let mut despawned_positions: HashSet<Position> = HashSet::new();
+    let mut blocks_to_spawn: Vec<(BlockSize, Position)> = Vec::new();
+
+    for (entity, pos) in positions.iter_mut() {
+        let block_size = block_sizes.get(entity).unwrap();
+        let game_board_block_size = game_board.get_cell(pos.x, pos.y).unwrap();
+
+        // blocks merged and now have new size
+        if block_size.ne(&game_board_block_size) {
+            commands.despawn_recursive(entity);
+
+            if despawned_positions.contains(&Position { x: pos.x, y: pos.y }) {
+                blocks_to_spawn.push((
+                    game_board_block_size.clone(),
+                    pos.clone(),
+                ));
+            } else {
+                despawned_positions.insert(Position { x: pos.x, y: pos.y });
+            }
+        }
+    }
+
+    if blocks_to_spawn.len() > 0 {
+        blocks_spawner(commands, &asset_server, &materials, &mut game_board, blocks_to_spawn);
+    }
+
     let (x, y) = game_board.rand_available_cell();
 
-    blocks_spawner(commands, &asset_server, &materials, game_board, vec!(
+    blocks_spawner(commands, &asset_server, &materials, &mut game_board, vec!(
         (BlockSize::_2, Position::new(x, y)),
     ))
 }

@@ -1,2 +1,3 @@
 
-pub struct BoardMovedEvent;
+pub struct BoardMoveStart;
+pub struct BoardMoveEnd;
