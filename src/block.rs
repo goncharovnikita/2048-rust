@@ -1,5 +1,5 @@
 pub struct Block;
-pub struct BlockText;
+pub struct BlockPlaceholder;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum BlockSize {

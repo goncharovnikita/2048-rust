@@ -36,4 +36,23 @@ impl Materials {
             BlockSize::_2048 => &materials._2048_color,
         }
     }
+
+    pub fn instantiate(mut materials: ResMut<Assets<ColorMaterial>>) -> Self {
+        Materials {
+            _2_color: materials.add(Color::rgb_u8(238, 228, 218).into()),
+            _4_color: materials.add(Color::rgb_u8(237, 224, 200).into()),
+            _8_color: materials.add(Color::rgb_u8(242, 177, 121).into()),
+            _16_color: materials.add(Color::rgb_u8(245, 149, 99).into()),
+            _32_color: materials.add(Color::rgb_u8(246, 124, 95).into()),
+            _64_color: materials.add(Color::rgb_u8(246, 94, 59).into()),
+            _128_color: materials.add(Color::rgb_u8(237, 207, 114).into()),
+            _256_color: materials.add(Color::rgb_u8(237, 204, 97).into()),
+            _512_color: materials.add(Color::rgb_u8(237, 200, 80).into()),
+            _1024_color: materials.add(Color::rgb_u8(237, 197, 63).into()),
+            _2048_color: materials.add(Color::rgb_u8(237, 194, 46).into()),
+            empty_color: materials.add(Color::rgba(238.0 / 255.0, 228.0 / 255.0, 218.0 / 255.0, 0.35).into()),
+            debug_color: materials.add(Color::rgb_u8(220, 20, 60).into()),
+            transparent_color: materials.add(Color::rgba_u8(0, 0, 0, 0).into()),
+        }
+    }
 }

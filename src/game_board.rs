@@ -12,7 +12,9 @@ pub struct GameBoard {
 }
 
 impl GameBoard {
-    pub fn new(game_board_array: GameBoardArray) -> Self {
+    pub fn new() -> Self {
+        let game_board_array: GameBoardArray = [[None; COLS_COUNT as usize]; ROWS_COUNT as usize];
+
         GameBoard {
             game_board_array: game_board_array,
         }
@@ -243,7 +245,7 @@ mod game_board_tests {
 
     #[test]
     fn steps_plain() {
-        let mut game_board = GameBoard::new([[None; COLS_COUNT as usize]; ROWS_COUNT as usize]);
+        let mut game_board = GameBoard::new();
 
         game_board.set_cell(0, 0, Some(BlockSize::_2));
 
@@ -262,7 +264,7 @@ mod game_board_tests {
 
     #[test]
     fn steps_multi_blocks() {
-        let mut game_board = GameBoard::new([[None; COLS_COUNT as usize]; ROWS_COUNT as usize]);
+        let mut game_board = GameBoard::new();
 
         game_board.set_cell(0, 0, Some(BlockSize::_2));
         game_board.set_cell(0, 1, Some(BlockSize::_4));
@@ -289,7 +291,7 @@ mod game_board_tests {
 
     #[test]
     fn blocks_merging() {
-        let mut game_board = GameBoard::new([[None; COLS_COUNT as usize]; ROWS_COUNT as usize]);
+        let mut game_board = GameBoard::new();
 
         game_board.set_cell(0, 0, Some(BlockSize::_2));
         game_board.set_cell(0, 1, Some(BlockSize::_2));
@@ -315,7 +317,7 @@ mod game_board_tests {
 
     #[test]
     fn complex_blocks_merging() {
-        let mut game_board = GameBoard::new([[None; COLS_COUNT as usize]; ROWS_COUNT as usize]);
+        let mut game_board = GameBoard::new();
 
         game_board.set_cell(0, 3, Some(BlockSize::_2));
         game_board.set_cell(1, 3, Some(BlockSize::_2));
@@ -341,7 +343,7 @@ mod game_board_tests {
 
     #[test]
     fn rand_cells() {
-        let mut game_board = GameBoard::new([[None; COLS_COUNT as usize]; ROWS_COUNT as usize]);
+        let mut game_board = GameBoard::new();
 
         for _x in 0..ROWS_COUNT {
             for _y in 0..COLS_COUNT {

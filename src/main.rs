@@ -1,5 +1,5 @@
 use bevy::{input::system::exit_on_esc_system, prelude::*};
-use std::{collections::HashSet, hash::Hash, time::Duration};
+use std::{borrow::BorrowMut, collections::HashSet, hash::Hash, time::Duration};
 
 mod constants;
 use constants::*;
@@ -18,10 +18,11 @@ use events::*;
 
 struct MoveTimer(Timer);
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct GameMovement {
     pressed_key: Option<KeyCode>,
     direction: Option<GameMovementDirection>,
+    move_timer: Option<Timer>,
 }
 
 impl Default for GameMovement {
@@ -29,6 +30,7 @@ impl Default for GameMovement {
         GameMovement {
             pressed_key: None,
             direction: None,
+            move_timer: None,
         }
     }
 }
@@ -51,6 +53,7 @@ impl Position {
 fn main() {
     App::build()
         .add_event::<BoardMovedEvent>()
+        .add_resource(ClearColor(Color::rgb_u8(187, 173, 160)))
         .add_resource(WindowDescriptor {
             title: "2048".to_string(),
             height: WINDOW_HEIGHT,
@@ -69,37 +72,23 @@ fn main() {
         .add_system(exit_on_esc_system.system())
         .add_system(input_movement.system())
         .add_system(movement.system())
+        .add_system(game_movement_ticker.system())
         .add_system(game_board_watcher.system())
         .run();
 }
 
 fn setup(
     commands: &mut Commands,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    materials: ResMut<Assets<ColorMaterial>>,
 ) {
     commands
         .spawn(Camera2dBundle::default())
         .spawn(CameraUiBundle::default());
 
     commands
-        .insert_resource(Materials {
-            _2_color: materials.add(Color::rgb_u8(238, 228, 218).into()),
-            _4_color: materials.add(Color::rgb_u8(237, 224, 200).into()),
-            _8_color: materials.add(Color::rgb_u8(242, 177, 121).into()),
-            _16_color: materials.add(Color::rgb_u8(245, 149, 99).into()),
-            _32_color: materials.add(Color::rgb_u8(246, 124, 95).into()),
-            _64_color: materials.add(Color::rgb_u8(246, 94, 59).into()),
-            _128_color: materials.add(Color::rgb_u8(237, 207, 114).into()),
-            _256_color: materials.add(Color::rgb_u8(237, 204, 97).into()),
-            _512_color: materials.add(Color::rgb_u8(237, 200, 80).into()),
-            _1024_color: materials.add(Color::rgb_u8(237, 197, 63).into()),
-            _2048_color: materials.add(Color::rgb_u8(237, 194, 46).into()),
-            empty_color: materials.add(Color::rgba(238.0 / 255.0, 228.0 / 255.0, 218.0 / 255.0, 0.35).into()),
-            debug_color: materials.add(Color::rgb_u8(220, 20, 60).into()),
-            transparent_color: materials.add(Color::rgba_u8(0, 0, 0, 0).into()),
-        });
+        .insert_resource(Materials::instantiate(materials));
 
-    let game_board = GameBoard::new([[None; COLS_COUNT as usize]; ROWS_COUNT as usize]);
+    let game_board = GameBoard::new();
 
     commands
         .insert_resource(game_board);
@@ -111,6 +100,27 @@ fn block_spawner(
     materials: Res<Materials>,
     game_board: ResMut<GameBoard>,
 ) {
+    for y in 0..ROWS_COUNT {
+        for x in 0..COLS_COUNT {
+            let pos = Position { x, y };
+
+            let mut transform = Transform::from_translation(Vec3::default());
+
+            transform_to_position(&pos, &mut transform);
+
+            let sprite_bundle = SpriteBundle {
+                material: materials.empty_color.clone(),
+                sprite: Sprite::new(Vec2::new(BLOCK_SIZE, BLOCK_SIZE)),
+                transform,
+                ..Default::default()
+            };
+
+            commands.spawn(sprite_bundle)
+                .with(pos)
+                .with(BlockPlaceholder);
+        }
+    }
+
     blocks_spawner(
         commands,
         &asset_server,
@@ -187,7 +197,7 @@ fn blocks_spawner(
         })
         .with(block_position.clone())
         .with(block_size.clone())
-        .with(BlockText);
+        .with(Block);
     
         game_board.set_cell(block_position.x, block_position.y, Some(block_size.clone()));
     }
@@ -197,15 +207,71 @@ fn style_to_position(
     pos: &Position,
     style: &mut Style,
 ) {
-    style.position.left = Val::Px(GAP + (pos.x as f32 * BLOCK_SIZE));
-    style.position.top = Val::Px(GAP + (pos.y as f32 * BLOCK_SIZE));
+    style.position.left = Val::Px(GAP + (pos.x as f32 * BLOCK_SIZE) + (pos.x as f32 * GAP));
+    style.position.top = Val::Px(GAP + (pos.y as f32 * BLOCK_SIZE) + (pos.y as f32 * GAP));
+}
+
+fn move_style_to(
+    pos: &Position,
+    style: &mut Style,
+    percent: f32,
+) {
+    let new_left = {
+        let dest = GAP + (pos.x as f32 * BLOCK_SIZE) + (pos.x as f32 * GAP);
+        let curr = match style.position.left {
+            Val::Px(curr) => curr,
+            _ => {
+                panic!("expected position in pixels")
+            }
+        };
+
+        Val::Px(curr + ((dest - curr) * percent))
+    };
+
+    let new_top = {
+        let dest = GAP + (pos.y as f32 * BLOCK_SIZE) + (pos.y as f32 * GAP);
+        let curr = match style.position.top {
+            Val::Px(curr) => curr,
+            _ => {
+                panic!("expected position in pixels")
+            }
+        };
+
+        Val::Px(curr + (dest - curr) * percent)
+    };
+
+    style.position.left = new_left;
+    style.position.top = new_top;
+}
+
+fn transform_to_position(
+    pos: &Position,
+    transform: &mut Transform,
+) {
+    transform.translation = Vec3::new(
+    GAP + (pos.x as f32 * BLOCK_SIZE) + (pos.x as f32 * GAP) - (WINDOW_WIDTH / 2.0) + (BLOCK_SIZE / 2.0),
+    GAP + (pos.y as f32 * BLOCK_SIZE) + (pos.y as f32 * GAP) - (WINDOW_HEIGHT / 2.0) + (BLOCK_SIZE / 2.0),
+    0.0
+    );
 }
 
 fn position_translation(
-    mut q: Query<(&Position, &mut Style), With<BlockText>>,
+    game_movement: Res<GameMovement>,
+    mut q: Query<(&Position, &mut Style)>,
 ) {
-    for (pos, mut style) in q.iter_mut() {
-        style_to_position(pos, &mut style);
+    if let Some(game_movement_timer) = game_movement.move_timer.to_owned() {
+        for (pos, mut style) in q.iter_mut() {
+            move_style_to(pos, &mut style, game_movement_timer.percent());
+        }
+    }
+}
+
+fn game_movement_ticker(
+    time: Res<Time>,
+    mut game_movement: ResMut<GameMovement>,
+) {
+    if let Some(timer) = game_movement.move_timer.borrow_mut() {
+        timer.tick(time.delta_seconds());
     }
 }
 
@@ -227,18 +293,23 @@ fn input_movement(
         return;
     }
 
-    if keyboard_input.pressed(KeyCode::Up) {
-        game_movement.direction = Some(GameMovementDirection::Up);
-        game_movement.pressed_key = Some(KeyCode::Up);
+    let (direction, pressed_key) = if keyboard_input.pressed(KeyCode::Up) {
+        (Some(GameMovementDirection::Up), Some(KeyCode::Up))
     } else if keyboard_input.pressed(KeyCode::Right) {
-        game_movement.direction = Some(GameMovementDirection::Right);
-        game_movement.pressed_key = Some(KeyCode::Right);
+        (Some(GameMovementDirection::Right), Some(KeyCode::Right))
     } else if keyboard_input.pressed(KeyCode::Down) {
-        game_movement.direction = Some(GameMovementDirection::Down);
-        game_movement.pressed_key = Some(KeyCode::Down);
+        (Some(GameMovementDirection::Down), Some(KeyCode::Down))
     } else if keyboard_input.pressed(KeyCode::Left) {
-        game_movement.direction = Some(GameMovementDirection::Left);
-        game_movement.pressed_key = Some(KeyCode::Left);
+        (Some(GameMovementDirection::Left), Some(KeyCode::Left))
+    } else {
+        (None, None)
+    };
+
+    game_movement.pressed_key = pressed_key;
+    game_movement.direction = direction;
+
+    if pressed_key.is_some() {
+        game_movement.move_timer = Some(Timer::new(Duration::from_millis(400. as u64), false));
     }
 }
 
@@ -246,8 +317,8 @@ fn movement(
     commands: &mut Commands,
     asset_server: Res<AssetServer>,
     materials: Res<Materials>,
-    block_sizes: Query<&BlockSize, With<BlockText>>,
-    mut positions: Query<(Entity, &mut Position), With<BlockText>>,
+    block_sizes: Query<&BlockSize, With<Block>>,
+    mut positions: Query<(Entity, &mut Position), With<Block>>,
     mut game_movement: ResMut<GameMovement>,
     mut game_board: ResMut<GameBoard>,
     mut board_moved_event: ResMut<Events<BoardMovedEvent>>,
@@ -284,8 +355,9 @@ fn movement(
             return;
         }
 
+        board_moved_event.send(BoardMovedEvent);
+
         game_board.move_board(direction);
-        // println!("game board moved: \n{}", game_board.pretty_string());
 
         let mut despawned_positions: HashSet<Position> = HashSet::new();
         let mut blocks_to_spawn: Vec<(BlockSize, Position)> = Vec::new();
@@ -312,8 +384,6 @@ fn movement(
         if blocks_to_spawn.len() > 0 {
             blocks_spawner(commands, &asset_server, &materials, game_board, blocks_to_spawn);
         }
-
-        board_moved_event.send(BoardMovedEvent);
     }
 }
 
