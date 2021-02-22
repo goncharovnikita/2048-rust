@@ -16,6 +16,12 @@ use materials::*;
 mod events;
 use events::*;
 
+mod components;
+use components::*;
+
+mod systems;
+use systems::*;
+
 struct MoveTimer(Timer);
 
 #[derive(Clone)]
@@ -75,6 +81,7 @@ fn main() {
         .add_system(movement.system())
         .add_system(game_board_watcher.system())
         .add_system(game_movement_timer_ticker.system())
+        .add_system(animate_block_spawned.system())
         .run();
 }
 
@@ -153,7 +160,7 @@ fn blocks_spawner(
     game_board: &mut ResMut<GameBoard>,
     blocks: Vec<(BlockSize, Position)>,
 ) {
-    let font = asset_server.load("OpenSans-Regular.ttf");
+    let font = asset_server.load("Roboto-Regular.ttf");
 
     for (block_size, block_position) in blocks.iter() {
         let mut node_style = Style {
@@ -198,6 +205,7 @@ fn blocks_spawner(
         })
         .with(block_position.clone())
         .with(block_size.clone())
+        .with(AnimateBlockTimer::default())
         .with(Block);
     
         game_board.set_cell(block_position.x, block_position.y, Some(block_size.clone()));
