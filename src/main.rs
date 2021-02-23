@@ -1,4 +1,4 @@
-use bevy::{input::system::exit_on_esc_system, prelude::*};
+use bevy::{app::{ScheduleRunnerPlugin, ScheduleRunnerSettings}, input::system::exit_on_esc_system, prelude::*};
 use std::{borrow::BorrowMut, collections::HashSet, hash::Hash, time::Duration};
 
 mod constants;
@@ -60,7 +60,9 @@ fn main() {
     App::build()
         .add_event::<BoardMoveStart>()
         .add_event::<BoardMoveEnd>()
+        .add_event::<GameOverEvent>()
         .add_resource(ClearColor(Color::rgb_u8(187, 173, 160)))
+        // .add_resource(Msaa { samples: 4 })
         .add_resource(WindowDescriptor {
             title: "2048".to_string(),
             height: WINDOW_HEIGHT,
@@ -72,9 +74,13 @@ fn main() {
             Duration::from_millis(200. as u64),
             true,
         )))
+        // .add_resource(ScheduleRunnerSettings::run_loop(Duration::from_millis(5000)))
         .add_plugins(DefaultPlugins)
+        // .add_plugin(ScheduleRunnerPlugin {})
         .add_startup_system(setup.system())
-        .add_startup_stage("spawn_initial_blocks", SystemStage::single(block_spawner.system()))
+        .add_startup_stage("spawn_placeholders", SystemStage::single(placeholders_spawner.system()))
+        // .add_startup_stage("spawn_initial_blocks", SystemStage::single(block_spawner.system()))
+        .add_startup_stage("spawn_debug_blocks", SystemStage::single(debug_block_spawner.system()))
         .add_system(position_translation.system())
         .add_system(exit_on_esc_system.system())
         .add_system(input_movement.system())
@@ -102,11 +108,9 @@ fn setup(
         .insert_resource(game_board);
 }
 
-fn block_spawner(
+fn placeholders_spawner(
     commands: &mut Commands,
-    asset_server: Res<AssetServer>,
     materials: Res<Materials>,
-    mut game_board: ResMut<GameBoard>,
 ) {
     for y in 0..ROWS_COUNT {
         for x in 0..COLS_COUNT {
@@ -128,7 +132,14 @@ fn block_spawner(
                 .with(BlockPlaceholder);
         }
     }
+}
 
+fn block_spawner(
+    commands: &mut Commands,
+    asset_server: Res<AssetServer>,
+    materials: Res<Materials>,
+    mut game_board: ResMut<GameBoard>,
+) {
     blocks_spawner(
         commands,
         &asset_server,
@@ -153,6 +164,45 @@ fn block_spawner(
     );
 }
 
+fn debug_block_spawner(
+    commands: &mut Commands,
+    asset_server: Res<AssetServer>,
+    materials: Res<Materials>,
+    mut game_board: ResMut<GameBoard>,
+) {
+    let mut blocks_to_spawn = Vec::new();
+
+    let mut curr_block = BlockSize::_2;
+
+    while let Some(block_size) = curr_block.next() {
+        let (x, y) = game_board.rand_available_cell();
+
+        blocks_to_spawn.push((
+            curr_block.clone(),
+            Position::new(x, y),
+        ));
+
+        game_board.set_cell(x, y, Some(curr_block.clone()));
+
+        curr_block = block_size;
+    }
+
+    let (x, y) = game_board.rand_available_cell();
+
+    blocks_to_spawn.push((
+        curr_block.clone(),
+        Position::new(x, y),
+    ));
+
+    blocks_spawner(
+        commands,
+        &asset_server,
+        &materials,
+        &mut game_board,
+        blocks_to_spawn
+    );
+}
+
 fn blocks_spawner(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
@@ -160,7 +210,7 @@ fn blocks_spawner(
     game_board: &mut ResMut<GameBoard>,
     blocks: Vec<(BlockSize, Position)>,
 ) {
-    let font = asset_server.load("Roboto-Regular.ttf");
+    let font = asset_server.load("Roboto-Bold.ttf");
 
     for (block_size, block_position) in blocks.iter() {
         let mut node_style = Style {
@@ -183,13 +233,19 @@ fn blocks_spawner(
             ..Default::default()
         })
         .with_children(|parent| {
+            let color = if Materials::should_use_inverted_color(block_size) {
+                materials.text_inverted_color.clone()
+            } else {
+                materials.text_primary_color.clone()
+            };
+
             parent.spawn( TextBundle {
                 text: Text {
                     value: block_size.to_string(),
                     font: font.clone(),
                     style: TextStyle {
-                        font_size: 20.0,
-                        color: Color::WHITE,
+                        font_size: BLOCK_TEXT_SIZE * Materials::font_scale(block_size),
+                        color,
                         alignment: TextAlignment {
                             horizontal: HorizontalAlign::Center,
                             vertical: VerticalAlign::Center,

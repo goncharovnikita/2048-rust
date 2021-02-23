@@ -17,6 +17,8 @@ pub struct Materials {
     pub _2048_color: Handle<ColorMaterial>,
     pub empty_color: Handle<ColorMaterial>,
     pub debug_color: Handle<ColorMaterial>,
+    pub text_primary_color: Color,
+    pub text_inverted_color: Color,
     pub transparent_color: Handle<ColorMaterial>,
 }
 
@@ -37,6 +39,27 @@ impl Materials {
         }
     }
 
+    pub fn should_use_inverted_color(block_size: &BlockSize) -> bool {
+        match block_size {
+            BlockSize::_8 => true,
+            BlockSize::_16 => true,
+            BlockSize::_32 => true,
+            BlockSize::_64 => true,
+            BlockSize::_512 => true,
+            BlockSize::_1024 => true,
+            BlockSize::_2048 => true,
+            _ => false,
+        }
+    }
+
+    pub fn font_scale(block_size: &BlockSize) -> f32 {
+        match block_size {
+            BlockSize::_1024 => 0.8,
+            BlockSize::_2048 => 0.8,
+            _ => 1.0,
+        }
+    }
+
     pub fn instantiate(mut materials: ResMut<Assets<ColorMaterial>>) -> Self {
         Materials {
             _2_color: materials.add(Color::rgb_u8(238, 228, 218).into()),
@@ -50,6 +73,8 @@ impl Materials {
             _512_color: materials.add(Color::rgb_u8(237, 200, 80).into()),
             _1024_color: materials.add(Color::rgb_u8(237, 197, 63).into()),
             _2048_color: materials.add(Color::rgb_u8(237, 194, 46).into()),
+            text_inverted_color: Color::WHITE,
+            text_primary_color: Color::rgb_u8(119, 110, 101),
             empty_color: materials.add(Color::rgba(238.0 / 255.0, 228.0 / 255.0, 218.0 / 255.0, 0.35).into()),
             debug_color: materials.add(Color::rgb_u8(220, 20, 60).into()),
             transparent_color: materials.add(Color::rgba_u8(0, 0, 0, 0).into()),

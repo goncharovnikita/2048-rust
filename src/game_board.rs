@@ -226,7 +226,7 @@ impl GameBoard {
 
             if let Some(block) = self.get_cell(x, y) {
                 if let Some(block_to_merge) = self.get_cell(new_x, new_y) {
-                    self.set_cell(new_x, new_y, Some(block_to_merge.next()));
+                    self.set_cell(new_x, new_y, Some(block_to_merge.next().unwrap()));
                 } else {
                     self.set_cell(new_x, new_y, Some(block));
                 }
