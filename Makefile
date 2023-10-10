@@ -1,7 +1,7 @@
 .PHONY: start debug
 
 start:
-	cargo run --features bevy/dynamic
+	TRACY_NO_INVARIANT_CHECK=1 cargo run
 
 debug:
 	cargo run --features "bevy/dynamic debug"

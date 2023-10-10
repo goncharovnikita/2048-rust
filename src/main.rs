@@ -1,4 +1,4 @@
-use bevy::{app::{ScheduleRunnerPlugin, ScheduleRunnerSettings}, input::system::exit_on_esc_system, prelude::*};
+use bevy::prelude::*;
 use std::{borrow::BorrowMut, collections::HashSet, hash::Hash, time::Duration};
 
 mod constants;
@@ -22,9 +22,10 @@ use components::*;
 mod systems;
 use systems::*;
 
+#[derive(Resource)]
 struct MoveTimer(Timer);
 
-#[derive(Clone)]
+#[derive(Resource, Clone)]
 struct GameMovement {
     pressed_key: Option<KeyCode>,
     direction: Option<GameMovementDirection>,
@@ -41,7 +42,7 @@ impl Default for GameMovement {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Component, Clone, PartialEq, Eq, Hash)]
 struct Position {
     x: u8,
     y: u8,
@@ -57,47 +58,47 @@ impl Position {
 }
 
 fn main() {
-    App::build()
+    App::new()
         .add_event::<BoardMoveStart>()
         .add_event::<BoardMoveEnd>()
         .add_event::<GameOverEvent>()
-        .add_resource(ClearColor(Color::rgb_u8(187, 173, 160)))
+        .insert_resource(ClearColor(Color::rgb_u8(187, 173, 160)))
         // .add_resource(Msaa { samples: 4 })
-        .add_resource(WindowDescriptor {
-            title: "2048".to_string(),
-            height: WINDOW_HEIGHT,
-            width: WINDOW_WIDTH,
+        .add_plugins(WindowPlugin {
+            primary_window: Some(Window {
+                title: "2048".to_string(),
+                resolution: (WINDOW_WIDTH, WINDOW_HEIGHT).into(),
+                ..Default::default()
+            }),
             ..Default::default()
         })
-        .add_resource(GameMovement::default())
-        .add_resource(MoveTimer(Timer::new(
+        .init_resource::<GameMovement>()
+        .insert_resource(MoveTimer(Timer::new(
             Duration::from_millis(200. as u64),
-            true,
+            TimerMode::Once,
         )))
         // .add_resource(ScheduleRunnerSettings::run_loop(Duration::from_millis(5000)))
         .add_plugins(DefaultPlugins)
         // .add_plugin(ScheduleRunnerPlugin {})
-        .add_startup_system(setup.system())
-        .add_startup_stage("spawn_placeholders", SystemStage::single(placeholders_spawner.system()))
+        .add_systems(Startup, setup)
+        .add_systems(Startup, (placeholders_spawner, debug_block_spawner))
         // .add_startup_stage("spawn_initial_blocks", SystemStage::single(block_spawner.system()))
-        .add_startup_stage("spawn_debug_blocks", SystemStage::single(debug_block_spawner.system()))
-        .add_system(position_translation.system())
-        .add_system(exit_on_esc_system.system())
-        .add_system(input_movement.system())
-        .add_system(movement.system())
-        .add_system(game_board_watcher.system())
-        .add_system(game_movement_timer_ticker.system())
-        .add_system(animate_block_spawned.system())
+        .add_systems(Update, position_translation)
+        // .add_system(exit_on_esc_system.system())
+        .add_systems(Update, input_movement)
+        .add_systems(Update, movement)
+        .add_systems(Update, game_board_watcher)
+        .add_systems(Update, game_movement_timer_ticker)
+        .add_systems(Update, animate_block_spawned)
         .run();
 }
 
 fn setup(
-    commands: &mut Commands,
+    mut commands: Commands,
     materials: ResMut<Assets<ColorMaterial>>,
 ) {
     commands
-        .spawn(Camera2dBundle::default())
-        .spawn(CameraUiBundle::default());
+        .spawn(Camera2dBundle::default());
 
     commands
         .insert_resource(Materials::instantiate(materials));
@@ -109,7 +110,7 @@ fn setup(
 }
 
 fn placeholders_spawner(
-    commands: &mut Commands,
+    mut commands: Commands,
     materials: Res<Materials>,
 ) {
     for y in 0..ROWS_COUNT {
@@ -121,27 +122,30 @@ fn placeholders_spawner(
             transform_to_position(&pos, &mut transform);
 
             let sprite_bundle = SpriteBundle {
-                material: materials.empty_color.clone(),
-                sprite: Sprite::new(Vec2::new(BLOCK_SIZE, BLOCK_SIZE)),
+                sprite: Sprite {
+                    color: materials.empty_color.clone(),
+                    custom_size: Some(Vec2::new(BLOCK_SIZE, BLOCK_SIZE)),
+                    ..Default::default()
+                },
                 transform,
                 ..Default::default()
             };
 
             commands.spawn(sprite_bundle)
-                .with(pos)
-                .with(BlockPlaceholder);
+                .insert(pos)
+                .insert(BlockPlaceholder);
         }
     }
 }
 
 fn block_spawner(
-    commands: &mut Commands,
+    mut commands: Commands,
     asset_server: Res<AssetServer>,
     materials: Res<Materials>,
     mut game_board: ResMut<GameBoard>,
 ) {
     blocks_spawner(
-        commands,
+        &mut commands,
         &asset_server,
         &materials,
         &mut game_board,
@@ -165,7 +169,7 @@ fn block_spawner(
 }
 
 fn debug_block_spawner(
-    commands: &mut Commands,
+    mut commands: Commands,
     asset_server: Res<AssetServer>,
     materials: Res<Materials>,
     mut game_board: ResMut<GameBoard>,
@@ -195,7 +199,7 @@ fn debug_block_spawner(
     ));
 
     blocks_spawner(
-        commands,
+        &mut commands,
         &asset_server,
         &materials,
         &mut game_board,
@@ -214,10 +218,8 @@ fn blocks_spawner(
 
     for (block_size, block_position) in blocks.iter() {
         let mut node_style = Style {
-            size: Size {
-                height: Val::Px(BLOCK_SIZE),
-                width: Val::Px(BLOCK_SIZE),
-            },
+            min_width: Val::Px(BLOCK_SIZE),
+            min_height: Val::Px(BLOCK_SIZE),
             align_content: AlignContent::Center,
             align_items: AlignItems::Center,
             justify_content: JustifyContent::Center,
@@ -229,7 +231,7 @@ fn blocks_spawner(
 
         commands.spawn(NodeBundle {
             style: node_style,
-            material: Materials::from_block_size(&materials, block_size.clone()).clone(),
+            background_color: BackgroundColor(Materials::from_block_size(&materials, block_size.clone())),
             ..Default::default()
         })
         .with_children(|parent| {
@@ -241,16 +243,18 @@ fn blocks_spawner(
 
             parent.spawn( TextBundle {
                 text: Text {
-                    value: block_size.to_string(),
-                    font: font.clone(),
-                    style: TextStyle {
-                        font_size: BLOCK_TEXT_SIZE * Materials::font_scale(block_size),
-                        color,
-                        alignment: TextAlignment {
-                            horizontal: HorizontalAlign::Center,
-                            vertical: VerticalAlign::Center,
+                    sections: Vec::from([
+                        TextSection{
+                            value: block_size.to_string(),
+                            style: TextStyle {
+                                font_size: BLOCK_TEXT_SIZE * Materials::font_scale(block_size),
+                                font: font.clone(),
+                                color,
+                            }
                         },
-                    }
+                    ]),
+                    alignment: TextAlignment::Center,
+                    ..Default::default()
                 },
                 style: Style {
                     align_self: AlignSelf::Center,
@@ -259,11 +263,11 @@ fn blocks_spawner(
                 ..Default::default()
             });
         })
-        .with(block_position.clone())
-        .with(block_size.clone())
-        .with(AnimateBlockTimer::default())
-        .with(Block);
-    
+        .insert(block_position.clone())
+        .insert(block_size.clone())
+        .insert(AnimateBlockTimer::default())
+        .insert(Block);
+
         game_board.set_cell(block_position.x, block_position.y, Some(block_size.clone()));
     }
 }
@@ -272,8 +276,8 @@ fn style_to_position(
     pos: &Position,
     style: &mut Style,
 ) {
-    style.position.left = Val::Px(GAP + (pos.x as f32 * BLOCK_SIZE) + (pos.x as f32 * GAP));
-    style.position.top = Val::Px(GAP + (pos.y as f32 * BLOCK_SIZE) + (pos.y as f32 * GAP));
+    style.left = Val::Px(GAP + (pos.x as f32 * BLOCK_SIZE) + (pos.x as f32 * GAP));
+    style.top = Val::Px(GAP + (pos.y as f32 * BLOCK_SIZE) + (pos.y as f32 * GAP));
 }
 
 fn move_style_to(
@@ -283,7 +287,7 @@ fn move_style_to(
 ) {
     let new_left = {
         let dest = GAP + (pos.x as f32 * BLOCK_SIZE) + (pos.x as f32 * GAP);
-        let curr = match style.position.left {
+        let curr = match style.left {
             Val::Px(curr) => curr,
             _ => {
                 panic!("expected position in pixels")
@@ -295,7 +299,7 @@ fn move_style_to(
 
     let new_top = {
         let dest = GAP + (pos.y as f32 * BLOCK_SIZE) + (pos.y as f32 * GAP);
-        let curr = match style.position.top {
+        let curr = match style.top {
             Val::Px(curr) => curr,
             _ => {
                 panic!("expected position in pixels")
@@ -305,8 +309,8 @@ fn move_style_to(
         Val::Px(curr + (dest - curr) * percent)
     };
 
-    style.position.left = new_left;
-    style.position.top = new_top;
+    style.left = new_left;
+    style.top = new_top;
 }
 
 fn transform_to_position(
@@ -342,7 +346,7 @@ fn game_movement_timer_ticker(
     mut game_movement: ResMut<GameMovement>,
 ) {
     if let Some(game_movement_timer) = game_movement.move_timer.borrow_mut() {
-        game_movement_timer.tick(time.delta_seconds());
+        game_movement_timer.tick(time.delta());
     }
 }
 
@@ -353,7 +357,7 @@ fn input_movement(
     if game_movement.direction.is_some() {
         return;
     }
-    
+
     if let Some(curr_pressed_key) = game_movement.pressed_key {
         if keyboard_input.just_released(curr_pressed_key) {
             game_movement.pressed_key = None;
@@ -380,7 +384,7 @@ fn input_movement(
     game_movement.direction = direction;
 
     if pressed_key.is_some() {
-        game_movement.move_timer = Some(Timer::new(Duration::from_millis(200. as u64), false));
+        game_movement.move_timer = Some(Timer::new(Duration::from_millis(200. as u64), TimerMode::Once));
     }
 }
 
@@ -429,16 +433,16 @@ fn movement(
 }
 
 fn game_board_watcher(
-    commands: &mut Commands,
+    mut commands: Commands,
     board_moved_evemts: Res<Events<BoardMoveEnd>>,
     asset_server: Res<AssetServer>,
     materials: Res<Materials>,
     block_sizes: Query<&BlockSize, With<Block>>,
     mut game_board: ResMut<GameBoard>,
     mut positions: Query<(Entity, &mut Position), With<Block>>,
-    mut move_reader: Local<EventReader<BoardMoveEnd>>,
+    mut move_reader: EventReader<BoardMoveEnd>,
 ) {
-    if move_reader.iter(&board_moved_evemts).next().is_none() {
+    if move_reader.iter().next().is_none() {
         return;
     }
 
@@ -451,7 +455,7 @@ fn game_board_watcher(
 
         // blocks merged and now have new size
         if block_size.ne(&game_board_block_size) {
-            commands.despawn_recursive(entity);
+            commands.entity(entity).despawn_recursive();
 
             if despawned_positions.contains(&Position { x: pos.x, y: pos.y }) {
                 blocks_to_spawn.push((
@@ -465,12 +469,12 @@ fn game_board_watcher(
     }
 
     if blocks_to_spawn.len() > 0 {
-        blocks_spawner(commands, &asset_server, &materials, &mut game_board, blocks_to_spawn);
+        blocks_spawner(&mut commands, &asset_server, &materials, &mut game_board, blocks_to_spawn);
     }
 
     let (x, y) = game_board.rand_available_cell();
 
-    blocks_spawner(commands, &asset_server, &materials, &mut game_board, vec!(
+    blocks_spawner(&mut commands, &asset_server, &materials, &mut game_board, vec!(
         (BlockSize::_2, Position::new(x, y)),
     ))
 }

@@ -1,7 +1,12 @@
+use bevy::prelude::Component;
+
+#[derive(Component)]
 pub struct Block;
+
+#[derive(Component)]
 pub struct BlockPlaceholder;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Component, Clone, Copy, PartialEq, Debug)]
 pub enum BlockSize {
     _2,
     _4,
