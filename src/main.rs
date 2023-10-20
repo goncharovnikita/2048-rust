@@ -1,5 +1,6 @@
 use bevy::prelude::*;
-use std::{borrow::BorrowMut, collections::HashSet, hash::Hash, time::Duration};
+use bevy::window::*;
+use std::{borrow::BorrowMut, collections::HashSet, hash::Hash, time::Duration, slice::Windows};
 
 mod constants;
 use constants::*;
@@ -64,49 +65,49 @@ fn main() {
         .add_event::<GameOverEvent>()
         .insert_resource(ClearColor(Color::rgb_u8(187, 173, 160)))
         // .add_resource(Msaa { samples: 4 })
-        .add_plugins(WindowPlugin {
-            primary_window: Some(Window {
-                title: "2048".to_string(),
-                resolution: (WINDOW_WIDTH, WINDOW_HEIGHT).into(),
-                ..Default::default()
-            }),
-            ..Default::default()
-        })
+        // .add_plugins(WindowPlugin {
+        //     primary_window: Some(Window {
+        //         title: "2048".to_string(),
+        //         resolution: (WINDOW_WIDTH, WINDOW_HEIGHT).into(),
+        //         ..Default::default()
+        //     }),
+        //     ..Default::default()
+        // })
         .init_resource::<GameMovement>()
         .insert_resource(MoveTimer(Timer::new(
             Duration::from_millis(200. as u64),
             TimerMode::Once,
         )))
+        .insert_resource(Materials::instantiate())
+        .insert_resource(GameBoard::new())
         // .add_resource(ScheduleRunnerSettings::run_loop(Duration::from_millis(5000)))
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "2048".into(),
+                    resolution: (WINDOW_WIDTH, WINDOW_HEIGHT).into(),
+                    present_mode: PresentMode::AutoVsync,
+                    ..Default::default()
+            }),
+            ..Default::default()
+        }))
         // .add_plugin(ScheduleRunnerPlugin {})
         .add_systems(Startup, setup)
-        .add_systems(Startup, (placeholders_spawner, debug_block_spawner))
-        // .add_startup_stage("spawn_initial_blocks", SystemStage::single(block_spawner.system()))
+        .add_systems(Startup, (placeholders_spawner, block_spawner, debug_block_spawner))
         .add_systems(Update, position_translation)
         // .add_system(exit_on_esc_system.system())
         .add_systems(Update, input_movement)
         .add_systems(Update, movement)
         .add_systems(Update, game_board_watcher)
         .add_systems(Update, game_movement_timer_ticker)
-        .add_systems(Update, animate_block_spawned)
+        //.add_systems(Update, animate_block_spawned)
         .run();
 }
 
 fn setup(
     mut commands: Commands,
-    materials: ResMut<Assets<ColorMaterial>>,
 ) {
     commands
         .spawn(Camera2dBundle::default());
-
-    commands
-        .insert_resource(Materials::instantiate(materials));
-
-    let game_board = GameBoard::new();
-
-    commands
-        .insert_resource(game_board);
 }
 
 fn placeholders_spawner(

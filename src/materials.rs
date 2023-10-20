@@ -60,7 +60,7 @@ impl Materials {
         }
     }
 
-    pub fn instantiate(mut materials: ResMut<Assets<ColorMaterial>>) -> Self {
+    pub fn instantiate() -> Self {
         Materials {
             _2_color: Color::rgb_u8(238, 228, 218),
             _4_color: Color::rgb_u8(237, 224, 200),
