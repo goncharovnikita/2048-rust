@@ -1,3 +1,4 @@
+use bevy::prelude::Resource;
 use rand::Rng;
 
 use crate::constants::{COLS_COUNT, ROWS_COUNT, GameMovementDirection};
@@ -7,6 +8,7 @@ pub type GameBoardArray = [[Option<BlockSize>; COLS_COUNT as usize]; ROWS_COUNT 
 
 type Patchset = Vec<((u8, u8), (u8, u8))>;
 
+#[derive(Resource)]
 pub struct GameBoard {
     game_board_array: GameBoardArray,
 }
