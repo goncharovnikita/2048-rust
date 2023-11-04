@@ -20,12 +20,12 @@ fn animate_block(
 ) {
     let curr_height = match style.height {
         Val::Px(height) => height,
-        _ => unreachable!()
+        _ => BLOCK_SIZE
     };
 
     let curr_width = match style.width {
         Val::Px(width) => width,
-        _ => unreachable!()
+        _ => BLOCK_SIZE
     };
 
     let curr_top = match style.margin.top {
